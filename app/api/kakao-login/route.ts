@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import jwt from "jsonwebtoken";
+import { cookies } from "next/headers";
+import { serialize } from "cookie";
 
 // Supabase 클라이언트 생성
 const supabase = createClient(
@@ -8,6 +11,12 @@ const supabase = createClient(
 );
 
 export async function POST(req: NextRequest) {
+  if (req.method !== "POST") {
+    return NextResponse.json(
+      { error: "잘못된 요청 방식입니다. POST 요청만 허용됩니다." },
+      { status: 405 }
+    );
+  }
   const { code } = await req.json();
 
   // 1. 카카오 access_token 발급
@@ -17,7 +26,7 @@ export async function POST(req: NextRequest) {
     body: new URLSearchParams({
       grant_type: "authorization_code",
       client_id: process.env.NEXT_PUBLIC_KAKAO_CLIENT_ID!,
-      client_secret: process.env.NEXT_PUBLIC_KAKAO_CLIENT_SECRET!,
+      //client_secret: process.env.NEXT_PUBLIC_KAKAO_CLIENT_SECRET!,
       redirect_uri: process.env.NEXT_PUBLIC_KAKAO_REDIRECT_URI!,
       code,
     }),
@@ -40,6 +49,10 @@ export async function POST(req: NextRequest) {
   });
   const userData = await userRes.json();
 
+  const kakaoId = userData.id?.toString() ?? "";
+  const nickname = userData.properties?.nickname ?? "";
+  const profileImg = userData.properties?.profile_image ?? "";
+
   if (!userData.id) {
     return NextResponse.json(
       { error: "카카오 유저 정보 요청 실패" },
@@ -48,26 +61,55 @@ export async function POST(req: NextRequest) {
   }
 
   // 3. Supabase upsert (user 테이블에 맞게)
-  const { error } = await supabase.from("user").upsert({
-    user_id: userData.id,
-    access_token: tokenData.access_token,
-    refresh_token: tokenData.refresh_token,
-    created_at: new Date().toISOString(),
-  });
+  let { data: user } = await supabase
+    .from("users")
+    .select("*")
+    .eq("kakao_id", kakaoId)
+    .single();
 
-  if (error) {
-    return NextResponse.json(
-      { error: "Supabase 저장 실패", detail: error },
-      { status: 500 }
-    );
+  if (!user) {
+    const { data: newUser, error: insertError } = await supabase
+      .from("users")
+      .insert([
+        {
+          kakao_id: kakaoId,
+          nickname: nickname,
+          profile_img: profileImg,
+        },
+      ])
+      .select()
+      .single();
+    if (insertError) {
+      return NextResponse.json(
+        { error: "Supabase에 유저 정보 저장 실패", detail: insertError },
+        { status: 500 }
+      );
+    }
+    user = newUser;
   }
 
-  // 4. 결과 반환
-  return NextResponse.json({
-    user: {
-      id: userData.id,
+  // 3-1. JWT 토큰 생성
+  const jwtToken = jwt.sign(
+    {
+      id: user.id,
+      nickname: user.nickname,
     },
-    access_token: tokenData.access_token,
-    refresh_token: tokenData.refresh_token,
+    process.env.JWT_SECRET!,
+    {
+      expiresIn: "30d", // 30일 동안 유효
+    }
+  );
+  // 3-2. JWT 토큰을 쿠키에 저장
+  (await cookies()).set({
+    name: "token",
+    value: jwtToken,
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: 60 * 60 * 24 * 30, // 30일 (초 단위)
   });
+
+  // 4. 결과 반환
+  return NextResponse.json({ ok: true });
 }

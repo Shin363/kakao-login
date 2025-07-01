@@ -12,20 +12,18 @@ export default function CallbackPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ code }),
+        credentials: "include", // 쿠키를 포함하여 요청
       })
         .then((res) => res.json())
         .then((data) => {
-          if (data.error) {
+          if (data.ok) {
+            alert("로그인 성공!");
+            router.replace("/"); // 홈으로 이동
+            return;
+          } else if (data.error) {
             alert("로그인 실패: " + data.error);
             router.replace("/login");
-            return;
           }
-          // 토큰/유저정보 등 저장
-          localStorage.setItem("access_token", data.access_token);
-          localStorage.setItem("user_id", data.user.id);
-          // 필요에 따라 상태관리 추가
-
-          router.replace("/"); // 홈으로 이동
         });
     } else {
       router.replace("/login");
