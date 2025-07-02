@@ -49,7 +49,7 @@ export async function POST(req: NextRequest) {
   });
   const userData = await userRes.json();
 
-  const kakaoId = userData.id?.toString() ?? "";
+  const kakaoId = userData.id?.toString() ?? ""; //435612 3535
   const nickname = userData.properties?.nickname ?? "";
   const profileImg = userData.properties?.profile_image ?? "";
 

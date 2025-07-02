@@ -12,7 +12,7 @@ export default function CallbackPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ code }),
-        credentials: "include", // 쿠키를 포함하여 요청
+        credentials: "include", // 쿠키에 JWT가 자동 저장됨
       })
         .then((res) => res.json())
         .then((data) => {
